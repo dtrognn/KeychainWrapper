@@ -42,18 +42,29 @@ public struct KeychainWrapper {
 
     public func writeData(_ data: Data, forKey key: String) throws {
         var query = baseQuery(forKey: key)
-        query[kSecAttrAccessible] = options.accessible
         if options.synchronizable {
             query[kSecAttrSynchronizable] = kCFBooleanTrue
         }
 
-        /// remove existing
-        SecItemDelete(query as CFDictionary)
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
 
-        /// add new data
-        query[kSecValueData] = data
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
+        switch status {
+        case errSecSuccess:
+            /// existing
+            let updateQuery: [CFString: Any] = [kSecValueData: data]
+            let updateStatus = SecItemUpdate(query as CFDictionary, updateQuery as CFDictionary)
+            guard updateStatus == errSecSuccess else {
+                throw mapError(updateStatus)
+            }
+        case errSecItemNotFound:
+            /// not existing -> add new
+            query[kSecAttrAccessible] = options.accessible
+            query[kSecValueData] = data
+            let addStatus = SecItemAdd(query as CFDictionary, nil)
+            guard addStatus == errSecSuccess else {
+                throw mapError(addStatus)
+            }
+        default:
             throw mapError(status)
         }
     }
